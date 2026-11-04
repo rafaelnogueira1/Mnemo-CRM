@@ -1,0 +1,27 @@
+# Mantém a main do fork rafaelnogueira1/TelosCRM em dia com o oficial
+# (melgarafael/DeskcommCRM). Usa a API merge-upstream do GitHub: fast-forward
+# ou merge sem conflito. Conflito = job vermelho, resolver à mão.
+#
+# Secret TELOS_SYNC_TOKEN: PAT fine-grained neste repo com Contents + Workflows
+# (write). O GITHUB_TOKEN não pode gravar mudança em .github/workflows, e o
+# upstream muda workflows.
+#
+# Não faz deploy: produção instala versões oficiais pelo telos-deploy.
+name: telos-sync-upstream
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: merge-upstream
+        env:
+          GH_TOKEN: ${{ secrets.TELOS_SYNC_TOKEN }}
+        run: gh api -X POST "repos/${{ github.repository }}/merge-upstream" -f branch=main

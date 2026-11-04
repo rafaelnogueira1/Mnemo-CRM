@@ -1,0 +1,75 @@
+# Deploy e rollback da instalação Telos (fork rafaelnogueira1/TelosCRM).
+#
+# Não sobe para o upstream. Roda o próprio kit na VPS:
+#   hostgator-setup-kit/update.sh --to <versão> [--force]
+# que faz backup antes, troca código + imagens, reaplica o baseline e confere
+# a saúde. Rollback = este mesmo workflow com a versão anterior e rollback=true
+# (o --force é o jeito explícito do update.sh de voltar versão).
+#
+# Limite: rollback troca código/imagem, NÃO o banco. O baseline é aditivo e
+# idempotente, então a versão anterior roda sobre ele. Voltar o banco é
+# restore.sh com o backup que o update.sh tirou — manual, por SSH.
+#
+# Secrets: TELOS_VPS_SSH_KEY (chave privada telos_github_deploy),
+#          TELOS_VPS_KNOWN_HOSTS (saída de ssh-keyscan do host, conferida).
+# Vars:    TELOS_VPS_HOST, TELOS_DOMINIO.
+name: telos-deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      versao:
+        description: "Versão oficial (ex.: v1.99.0)"
+        required: true
+        type: string
+      rollback:
+        description: "Voltar para versão anterior (passa --force)"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: telos-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: producao
+    timeout-minutes: 45
+    steps:
+      - name: Validar versão
+        env:
+          VERSAO: ${{ inputs.versao }}
+        run: |
+          [[ "$VERSAO" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::versão inválida: use vX.Y.Z"; exit 1; }
+
+      - name: Preparar SSH
+        env:
+          KEY: ${{ secrets.TELOS_VPS_SSH_KEY }}
+          KNOWN: ${{ secrets.TELOS_VPS_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN" > ~/.ssh/known_hosts
+
+      - name: update.sh na VPS
+        env:
+          HOST: ${{ vars.TELOS_VPS_HOST }}
+          VERSAO: ${{ inputs.versao }}
+          FORCE: ${{ inputs.rollback && '--force' || '' }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "telos-agent@$HOST" \
+            "cd /opt/deskcommcrm && bash hostgator-setup-kit/update.sh --to $VERSAO $FORCE" </dev/null
+
+      - name: Conferir o domínio (/ = 200, /app = 307)
+        env:
+          DOMINIO: ${{ vars.TELOS_DOMINIO }}
+        run: |
+          raiz=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://$DOMINIO/")
+          app=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://$DOMINIO/app")
+          echo "/ = $raiz | /app = $app"
+          [ "$raiz" = 200 ] && [ "$app" = 307 ]

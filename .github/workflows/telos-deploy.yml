@@ -1,4 +1,4 @@
-# Deploy e rollback da instalação Telos (fork rafaelnogueira1/TelosCRM).
+# Deploy e rollback da instalação Telos (fork rafaelnogueira1/Mnemo-CRM).
 #
 # Não sobe para o upstream. Roda o próprio kit na VPS:
 #   hostgator-setup-kit/update.sh --to <versão> [--force]
